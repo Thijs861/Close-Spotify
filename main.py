@@ -1,20 +1,18 @@
+import tkinter as tk
+from tkinter import messagebox
 import keyboard
 import psutil
 import os
 import subprocess
+import threading
 import time
-from pathlib import Path
 
-def get_spotify_path():
-    user_profile = os.environ.get('USERPROFILE')
-    default_path = Path(user_profile) / "AppData" / "Roaming" / "Spotify" / "Spotify.exe"
-    if default_path.exists():
-        return str(default_path)
-    else: 
-        print("Spotify.exe not found at the default location.")
-        return None
+DEFAULT_HOTKEY = 'ctrl+alt+s'
+SPOTIFY_PROCESS_NAME = 'Spotify.exe'
+SPOTIFY_EXECUTABLE = os.path.expandvars(r"%AppData%\Spotify\Spotify.exe")
 
-def close_Spotify():
+# === Core functions ===
+def close_spotify():
     closed = False
     # Search for all running processes on your system and sort them by name.
     for proc in psutil.process_iter(['name']):
@@ -27,23 +25,52 @@ def close_Spotify():
                 print("Could not close Spotify") # If the program failed, return an error
     if not closed:
         print("Spotify was not running.")
-    else: 
-        reopen_spotify()
 
-def reopen_spotify(delay=3):
-    print(f"Reopening Spotify in {delay} seconds...")
-    time.sleep(delay)
-    spotify_path = get_spotify_path()
-    if spotify_path:
-        try:
-            subprocess.Popen(spotify_path)
-        except Exception as e:
-            print(f"Failed to launch Spotify: {e}")
+def open_spotify():
+    if os.path.exists(SPOTIFY_EXECUTABLE):
+        subprocess.Popen([SPOTIFY_EXECUTABLE])
+        status_label.config(text="Spotify opened")
+    else:
+        messagebox.showerror("Error, Spotify executable not found.")
 
-# Hotkey for closing Spotify.
-keyboard.add_hotkey('ctrl+alt+s', close_Spotify)
+def reopen_spotify():
+    close_spotify()
+    time.sleep(3)
+    open_spotify()
 
-print("Press Ctrl + Alt + S to close Spotify.")
-print("Press Esc to exit.")
+# === Hotkey ===
+def listen_for_hotkey(hotkey):
+    def handler():
+        close_spotify()
+    keyboard.add_hotkey(hotkey, handler)
+    keyboard.wait()
 
-keyboard.wait('esc')
+def update_hotkey():
+    new_hotkey = hotkey_entry.get().strip()
+    if new_hotkey:
+        keyboard.clear_all_hotkeys()
+        threading.Thread(target=listen_for_hotkey, args=(new_hotkey,), daemon=True).start()
+
+# === UI Setup ===
+root = tk.Tk()
+root.title("Spotify ad skipper")
+root.geometry("400x250")
+root.resizable(False, False)
+
+tk.Label(root, text="Set Your Hotkey (e.g., ctrl+alt+s):").pack(pady=(10,0))
+hotkey_entry = tk.Entry(root, width=30)
+hotkey_entry.insert(0, DEFAULT_HOTKEY)
+hotkey_entry.pack(pady=5)
+
+tk.Button(root, text="Set Hotkey", command=update_hotkey).pack(pady=5)
+tk.Button(root, text="Reopen Spotify", command=reopen_spotify).pack(pady=5)
+
+# tk.Button(root, text="Close Spotify", command=close_spotify).pack(pady=5)
+# tk.Button(root, text="Open Spotify", command=open_spotify).pack(pady=5)
+
+status_label = tk.Label(root, text="Ready", fg="green")
+status_label.pack(pady=10)
+
+threading.Thread(target=listen_for_hotkey, args=(DEFAULT_HOTKEY,), daemon=True).start()
+
+root.mainloop()

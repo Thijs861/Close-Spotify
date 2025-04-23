@@ -7,6 +7,9 @@ import json
 import subprocess
 import threading
 import time
+import win32gui
+import win32con
+import win32process
 
 CONFIG_FILE = 'settings.json'
 
@@ -16,30 +19,26 @@ SPOTIFY_EXECUTABLE = os.path.expandvars(r"%AppData%\Spotify\Spotify.exe")
 
 # === Core functions ===
 def close_spotify():
-    def terminate_spotify():
-        closed = False
-        for proc in psutil.process_iter(['name']): # Find all running processes by name. 
-            if proc.info['name'] and 'spotify.exe' in proc.info['name'].lower(): # Scan for a process named Spotify.
-                try:
-                    proc.terminate()
-                    closed = True
-                    print("Spotify has been closed.")
-                except (psutil.NoSuchProcess, psutil.AccessDenied): # Throw an error if Spotify denies the termination. 
-                    print("Could not close Spotify")
-        if not closed:
-            print("Spotify was not running.")
+    def enum_windows_callback(hwnd, pid_list):
+        try:
+            _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
+            if found_pid in pid_list:
+                win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+        except Exception as e:
+            print ("Window enumeration error: ", e)
 
-        # Update the Tkinter UI
-        root.after(0, lambda: status_label.config(text="Spotify closed"))
+    spotify_pids = [
+        proc.pid for proc in psutil.process_iter(['name'])
+        if proc.info['name'] and 'spotify.exe' in proc.info['name'].lower()
+    ]
 
-    threading.Thread(target=terminate_spotify, daemon=True).start()
+    if not spotify_pids:
+        print("Spotify is not running")
+        return
+    
+    win32gui.EnumWindows(enum_windows_callback, spotify_pids)
+    print("Succesfully closed Spotify")
 
-# def open_spotify():
-#     if os.path.exists(SPOTIFY_EXECUTABLE):
-#         subprocess.Popen([SPOTIFY_EXECUTABLE]) # Open Spotify app.
-#         status_label.config(text="Spotify opened")
-#     else:
-#         messagebox.showerror("Error, Spotify executable not found.")
 
 def open_spotify():
     if os.path.exists(SPOTIFY_EXECUTABLE):
@@ -51,7 +50,6 @@ def open_spotify():
         status_label.config(text="Spotify opened")
     else:
         messagebox.showerror("Error", "Spotify executable not found.")
-
 
 def reopen_spotify():
     close_spotify()
@@ -79,7 +77,7 @@ def save_settings(settings):
 # === Hotkey ===
 def listen_for_hotkey(hotkey):
     def handler():
-        close_spotify()
+        reopen_spotify()
     keyboard.add_hotkey(hotkey, handler)
     keyboard.wait()
 
@@ -88,7 +86,7 @@ def update_hotkey():
     if new_hotkey:
         keyboard.clear_all_hotkeys()
         save_settings(new_hotkey)
-        threading.Thread(target=listen_for_hotkey, args=(new_hotkey,), daemon=True).start()
+        threading.Thread(target=listen_for_hotkey, args=(new_hotkey,), daemon=None).start()
 
 # === UI Setup ===
 root = tk.Tk()
@@ -110,6 +108,6 @@ tk.Button(root, text="Open Spotify", command=open_spotify).pack(pady=5)
 status_label = tk.Label(root, text="Ready", fg="green")
 status_label.pack(pady=10)
 
-# threading.Thread(target=listen_for_hotkey, args=(DEFAULT_HOTKEY,), daemon=True).start()
+threading.Thread(target=listen_for_hotkey, args=(DEFAULT_HOTKEY,), daemon=None).start()
 
 root.mainloop()
